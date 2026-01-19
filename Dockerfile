@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- Backend Build Stage ---
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:alpine AS backend-builder
 WORKDIR /app
 # Install build dependencies for CGO if needed (though we aim for CGO_ENABLED=0)
 RUN apk add --no-cache gcc musl-dev
@@ -40,6 +40,7 @@ EXPOSE 3000
 ENV PORT=3000
 ENV DATABASE_PATH=./memes.db
 ENV UPLOAD_DIR=./uploads
+ENV ADMIN_PASSWORD=admin123
 
 # Entry point
 CMD ["./server"]
