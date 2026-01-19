@@ -1,0 +1,23 @@
+# Binaries
+/server.exe
+/server.exe~
+/server-linux
+
+# Database
+/memes.db
+
+# Uploads
+/uploads/*
+!/uploads/.gitkeep
+
+# Node.js
+/web/node_modules/
+/web/dist/
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
