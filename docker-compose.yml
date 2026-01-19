@@ -1,0 +1,14 @@
+services:
+  meme-gallery:
+    image: ghcr.io/qgiproject/hyw-memes:main
+    container_name: meme-gallery
+    ports:
+      - "3000:3000"
+    environment:
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - PORT=3000
+      - DATABASE_PATH=/app/data/memes.db
+      - UPLOAD_DIR=/app/data/uploads
+    volumes:
+      - ./data:/app/data
+    restart: always

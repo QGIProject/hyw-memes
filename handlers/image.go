@@ -54,9 +54,21 @@ func UploadImage(c *fiber.Ctx) error {
 	// Let's use BodyParser for cleaner code if possible, but this is multipart.
 	// So just standard parsing.
 
+	// Get category if provided
+	categoryID := c.FormValue("category_id")
+
 	// Save to database
-	query := "INSERT INTO images (filename, original_name, uploader_id) VALUES (?, ?, ?)"
-	result, err := database.DB.Exec(query, filename, file.Filename, userID)
+	var query string
+	var args []interface{}
+	if categoryID != "" {
+		query = "INSERT INTO images (filename, original_name, uploader_id, category_id) VALUES (?, ?, ?, ?)"
+		args = []interface{}{filename, file.Filename, userID, categoryID}
+	} else {
+		query = "INSERT INTO images (filename, original_name, uploader_id) VALUES (?, ?, ?)"
+		args = []interface{}{filename, file.Filename, userID}
+	}
+
+	result, err := database.DB.Exec(query, args...)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to save image record: " + err.Error(),
