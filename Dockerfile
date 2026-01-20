@@ -40,7 +40,6 @@ EXPOSE 3000
 ENV PORT=3000
 ENV DATABASE_PATH=./memes.db
 ENV UPLOAD_DIR=./uploads
-ENV ADMIN_PASSWORD=admin123
 
 # Entry point
 CMD ["./server"]

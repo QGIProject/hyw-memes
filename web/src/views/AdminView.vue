@@ -281,6 +281,7 @@ const catColumns = [
         </div>
 
         <!-- Audit -->
+        <div v-if="activeKey === 'audit'">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-2xl font-bold m-0">待审核图片</h2>
             <a-space>
