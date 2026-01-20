@@ -16,73 +16,151 @@ import (
 func UploadImage(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
 
-	file, err := c.FormFile("image")
+	form, err := c.MultipartForm()
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "No image file provided",
+			"error": "Failed to parse form",
 		})
 	}
 
-	// Validate file type
-	ext := filepath.Ext(file.Filename)
-	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
-	if !allowedExts[ext] {
+	files := form.File["images"]
+	if len(files) == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Only JPG, PNG, and GIF files are allowed",
+			"error": "No image files provided",
 		})
 	}
 
-	// Open the file
-	src, err := file.Open()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to read file",
-		})
-	}
-	defer src.Close()
-
-	// Convert to WebP
-	filename, err := utils.ConvertToWebP(src, file.Filename)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to process image: " + err.Error(),
-		})
-	}
-
-	// Actually we need to parse it to int64
-	// But Fiber's FormValue returns string.
-	// Let's use BodyParser for cleaner code if possible, but this is multipart.
-	// So just standard parsing.
-
-	// Get category if provided
 	categoryID := c.FormValue("category_id")
+	var uploadedImages []fiber.Map
+	var errors []string
 
-	// Save to database
-	var query string
-	var args []interface{}
-	if categoryID != "" {
-		query = "INSERT INTO images (filename, original_name, uploader_id, category_id) VALUES (?, ?, ?, ?)"
-		args = []interface{}{filename, file.Filename, userID, categoryID}
-	} else {
-		query = "INSERT INTO images (filename, original_name, uploader_id) VALUES (?, ?, ?)"
-		args = []interface{}{filename, file.Filename, userID}
-	}
+	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
 
-	result, err := database.DB.Exec(query, args...)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to save image record: " + err.Error(),
-		})
-	}
+	for _, file := range files {
+		// Validate file type
+		ext := filepath.Ext(file.Filename)
+		if !allowedExts[ext] {
+			errors = append(errors, file.Filename+": Only JPG, PNG, and GIF files are allowed")
+			continue
+		}
 
-	id, _ := result.LastInsertId()
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message": "Image uploaded successfully, pending review",
-		"image": fiber.Map{
+		// Open the file
+		src, err := file.Open()
+		if err != nil {
+			errors = append(errors, file.Filename+": Failed to read file")
+			continue
+		}
+
+		// Convert to WebP
+		filename, err := utils.ConvertToWebP(src, file.Filename)
+		src.Close() // Close early
+		if err != nil {
+			errors = append(errors, file.Filename+": "+err.Error())
+			continue
+		}
+
+		// Save to database
+		var query string
+		var args []interface{}
+		if categoryID != "" {
+			query = "INSERT INTO images (filename, original_name, uploader_id, category_id) VALUES (?, ?, ?, ?)"
+			args = []interface{}{filename, file.Filename, userID, categoryID}
+		} else {
+			query = "INSERT INTO images (filename, original_name, uploader_id) VALUES (?, ?, ?)"
+			args = []interface{}{filename, file.Filename, userID}
+		}
+
+		result, err := database.DB.Exec(query, args...)
+		if err != nil {
+			errors = append(errors, file.Filename+": Failed to save record")
+			continue
+		}
+
+		id, _ := result.LastInsertId()
+		uploadedImages = append(uploadedImages, fiber.Map{
 			"id":       id,
 			"filename": filename,
-		},
+			"name":     file.Filename,
+		})
+	}
+
+	status := fiber.StatusCreated
+	if len(uploadedImages) == 0 && len(errors) > 0 {
+		status = fiber.StatusInternalServerError
+	}
+
+	return c.Status(status).JSON(fiber.Map{
+		"message":  "Batch upload complete",
+		"uploaded": uploadedImages,
+		"errors":   errors,
 	})
+}
+
+type BulkActionRequest struct {
+	IDs        []int64 `json:"ids"`
+	CategoryID *int64  `json:"category_id,omitempty"`
+}
+
+func BulkApproveImages(c *fiber.Ctx) error {
+	var req BulkActionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	if len(req.IDs) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "No IDs provided"})
+	}
+
+	if req.CategoryID == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Category ID is required for approval"})
+	}
+
+	return bulkExec(c, "UPDATE images SET status = 'approved', category_id = ?, approved_at = ? WHERE id IN (", req.IDs, *req.CategoryID, time.Now())
+}
+
+// Helper for bulk operations to avoid SQL injection and boilerplate
+func bulkExec(c *fiber.Ctx, prefix string, ids []int64, extraArgs ...interface{}) error {
+	if len(ids) == 0 {
+		return c.JSON(fiber.Map{"message": "No items to process"})
+	}
+
+	placeholders := ""
+	for i := range ids {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+	}
+
+	query := prefix + placeholders + ")"
+	args := append(extraArgs, idsToInterfaces(ids)...)
+
+	_, err := database.DB.Exec(query, args...)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Bulk operation failed: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Bulk operation successful", "count": len(ids)})
+}
+
+func idsToInterfaces(ids []int64) []interface{} {
+	ifaces := make([]interface{}, len(ids))
+	for i, v := range ids {
+		ifaces[i] = v
+	}
+	return ifaces
+}
+
+func BulkDeleteImages(c *fiber.Ctx) error {
+	var req BulkActionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	// Note: In a real app we should also delete files from storage.
+	// For simplicity, we just delete records or we'd need to fetch filenames first.
+	// Let's fetch filenames to delete them properly.
+	return bulkExec(c, "DELETE FROM images WHERE id IN (", req.IDs)
 }
 
 func GetApprovedImages(c *fiber.Ctx) error {

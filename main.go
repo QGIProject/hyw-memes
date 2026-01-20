@@ -78,6 +78,8 @@ func main() {
 	admin.Get("/pending", handlers.GetPendingImages) // Keep for convenience or legacy
 	admin.Get("/images", handlers.GetAdminImages)    // New generic list
 	admin.Post("/approve/:id", handlers.ApproveImage)
+	admin.Post("/bulk-approve", handlers.BulkApproveImages)
+	admin.Post("/bulk-delete", handlers.BulkDeleteImages)
 	admin.Delete("/images/:id", handlers.RejectImage) // Renamed usage, handlers.RejectImage now does generic delete
 	admin.Post("/reject/:id", handlers.RejectImage)   // Keep alias for compatibility
 

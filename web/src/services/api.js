@@ -43,9 +43,15 @@ export const imageApi = {
         if (categoryId) url += `?category_id=${categoryId}`
         return api.get(url)
     },
-    upload: (file, categoryId = '') => {
+    upload: (files, categoryId = '') => {
         const formData = new FormData()
-        formData.append('image', file)
+        // Handle both single file and array of files
+        if (Array.isArray(files)) {
+            files.forEach(file => formData.append('images', file))
+        } else {
+            formData.append('images', files)
+        }
+
         if (categoryId) formData.append('category_id', categoryId)
         return api.post('/images/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
@@ -62,6 +68,8 @@ export const adminApi = {
     approve: (id, categoryId) => api.post(`/admin/approve/${id}`, { category_id: categoryId }, { headers: { 'X-Admin-Token': 'admin' } }),
     reject: (id) => api.post(`/admin/reject/${id}`, {}, { headers: { 'X-Admin-Token': 'admin' } }),
     deleteImage: (id) => api.delete(`/admin/images/${id}`, { headers: { 'X-Admin-Token': 'admin' } }),
+    bulkApprove: (ids, categoryId) => api.post('/admin/bulk-approve', { ids, category_id: categoryId }, { headers: { 'X-Admin-Token': 'admin' } }),
+    bulkDelete: (ids) => api.post('/admin/bulk-delete', { ids }, { headers: { 'X-Admin-Token': 'admin' } }),
     getStats: () => api.get('/admin/stats', { headers: { 'X-Admin-Token': 'admin' } })
 }
 

@@ -142,6 +142,44 @@ const deleteCategory = (id) => {
   })
 }
 
+// Batch Operation State
+const selectedRowKeys = ref([])
+const bulkModalVisible = ref(false)
+const bulkCategoryId = ref(null)
+
+const onSelectChange = (keys) => {
+  selectedRowKeys.value = keys
+}
+
+const handleBulkApprove = async () => {
+  if (!bulkCategoryId.value) return message.warning('请选择分类')
+  try {
+    await adminApi.bulkApprove(selectedRowKeys.value, bulkCategoryId.value)
+    message.success(`批量审批成功 (${selectedRowKeys.value.length} 张)`)
+    selectedRowKeys.value = []
+    bulkModalVisible.value = false
+    loadPending(); loadInitialData()
+  } catch (e) { message.error('批量审批失败') }
+}
+
+const handleBulkDelete = () => {
+  Modal.confirm({
+    title: `确认永久删除这 ${selectedRowKeys.value.length} 张图片?`,
+    content: '此操作不可恢复',
+    okType: 'danger',
+    onOk: async () => {
+      try {
+        await adminApi.bulkDelete(selectedRowKeys.value)
+        message.success('批量删除成功')
+        selectedRowKeys.value = []
+        if (activeKey.value === 'audit') loadPending()
+        else loadAllImages()
+        loadInitialData()
+      } catch (e) { message.error('批量删除失败') }
+    }
+  })
+}
+
 onMounted(() => {
   // Check session
   adminApi.getStats().then(() => { isLoggedIn.value = true; loadInitialData() }).catch(() => {})
@@ -243,12 +281,24 @@ const catColumns = [
         </div>
 
         <!-- Audit -->
-        <div v-if="activeKey === 'audit'">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-2xl font-bold m-0">待审核图片</h2>
-            <a-button @click="loadPending">刷新</a-button>
+            <a-space>
+              <a-button v-if="selectedRowKeys.length > 0" type="primary" @click="bulkModalVisible = true">
+                批量批准 ({{ selectedRowKeys.length }})
+              </a-button>
+              <a-button v-if="selectedRowKeys.length > 0" danger @click="handleBulkDelete">
+                批量拒绝/删除
+              </a-button>
+              <a-button @click="loadPending; selectedRowKeys = []">刷新</a-button>
+            </a-space>
           </div>
-          <a-table :dataSource="pendingImages" :columns="pendingColumns" rowKey="id">
+          <a-table 
+            :dataSource="pendingImages" 
+            :columns="pendingColumns" 
+            rowKey="id"
+            :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
+          >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'cover'">
                 <a-image :src="`/uploads/${record.filename}`" width="80px" height="60px" class="object-cover rounded" />
@@ -279,7 +329,12 @@ const catColumns = [
         <div v-if="activeKey === 'images'">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-2xl font-bold m-0">图片管理</h2>
-            <a-button @click="loadAllImages">刷新</a-button>
+            <a-space>
+              <a-button v-if="selectedRowKeys.length > 0" danger @click="handleBulkDelete">
+                批量删除 ({{ selectedRowKeys.length }})
+              </a-button>
+              <a-button @click="loadAllImages; selectedRowKeys = []">刷新</a-button>
+            </a-space>
           </div>
           <a-table 
              :dataSource="allImages" 
@@ -287,6 +342,7 @@ const catColumns = [
              rowKey="id"
              :loading="allImagesLoading"
              :pagination="imagePagination"
+             :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
              @change="(p) => { imagePagination.current = p.current; loadAllImages() }"
           >
             <template #bodyCell="{ column, record }">
@@ -338,6 +394,17 @@ const catColumns = [
              <a-input v-model:value="catForm.slug" placeholder="例如: anime" />
           </a-form-item>
        </a-form>
+    </a-modal>
+
+    <!-- Bulk Approve Modal -->
+    <a-modal v-model:open="bulkModalVisible" title="批量批准分类" @ok="handleBulkApprove">
+       <p class="mb-4">将选中的 {{ selectedRowKeys.length }} 张图片移动到：</p>
+       <a-select 
+          v-model:value="bulkCategoryId" 
+          placeholder="选择目标分类" 
+          style="width: 100%"
+          :options="categories.map(c => ({ label: c.name, value: c.id }))"
+       />
     </a-modal>
   </div>
 </template>
